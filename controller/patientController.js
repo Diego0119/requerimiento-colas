@@ -3,23 +3,24 @@ const QueueModel = require('../model/QueueModel.js');
 const { Op } = require('sequelize');
 const sequelize = require('sequelize');
 
-const asignarAttentionNumber = async (patient_id, queue_id) => {
+const asignedAttentionNumber = async (patient_id, queue_id) => {
     try {
-
-        const ultimoPaciente = await PatientModel.findOne({
+        const lastPatient = await PatientModel.findOne({
             where: {
                 queue_id: queue_id,
+                in_queue: true,
+                in_attention: true,
             },
             order: [['attention_number', 'DESC']],
         });
 
-        let nuevoAttentionNumber = 0;
+        let newAttentionNumber = 0;
 
-        if (ultimoPaciente && ultimoPaciente.attention_number !== null) {
-            nuevoAttentionNumber = parseInt(ultimoPaciente.attention_number, 10) + 1;
+        if (lastPatient && lastPatient.attention_number !== null) {
+            newAttentionNumber = parseInt(lastPatient.attention_number, 10) + 1;
         }
 
-        return nuevoAttentionNumber;
+        return newAttentionNumber;
     } catch (error) {
         console.error('Error al asignar attention_number:', error);
         throw error;
@@ -30,7 +31,7 @@ const patientController = {
     addPatient: async (req, res) => {
         try {
             const patient_id = req.body.patient_id;
-            const queue_id = req.params.queueId;
+            const queue_id = req.body.queue_id;
 
             const queue_quotas = await QueueModel.findByPk(queue_id);
 
@@ -56,27 +57,26 @@ const patientController = {
                 return res.status(404).send('No hay colas activas para el profesional en este momento.');
             }
 
-            const nuevoAttentionNumber = await asignarAttentionNumber(patient_id, queue_id);
+            const newAttentionNumber = await asignedAttentionNumber(patient_id, queue_id);
+
+            const positionInQueue = await PatientModel.count({
+                where: {
+                    queue_id: queue_id,
+                    attention_number: { [Op.lte]: newAttentionNumber },
+                    in_attention: false,
+                },
+            });
 
             const newPatient = await PatientModel.create({
                 id: patient_id,
                 in_queue: true,
                 in_attention: false,
                 queue_id: queue_id,
-                attention_number: nuevoAttentionNumber,
-            });
-
-            const positionInQueue = await PatientModel.count({
-                where: {
-                    queue_id: queue_id,
-                    attention_number: { [Op.lte]: nuevoAttentionNumber },
-                    in_attention: false,
-                },
+                attention_number: newAttentionNumber,
             });
 
             const calculateEstimatedWaitTime = async (queue, patientAttentionNumber) => {
                 try {
-
                     const patientsBefore = await PatientModel.count({
                         where: {
                             queue_id: queue.id,
@@ -88,23 +88,23 @@ const patientController = {
                     });
 
                     const averageAppointmentDuration = 30;
-                    if (patientsBefore.length === 0) {
-                        return estimatedWaitTime = 30;
-                    }
-                    const estimatedWaitTime = patientsBefore * averageAppointmentDuration;
 
-                    return estimatedWaitTime;
+                    const positionDifference = patientsBefore - 1;
+
+                    const estimatedWaitTime = positionDifference * averageAppointmentDuration;
+
+                    return Math.max(estimatedWaitTime, 0);
                 } catch (error) {
                     console.error('Error al calcular el tiempo de espera estimado:', error);
                     throw error;
                 }
             };
 
-            const estimatedWaitTime = calculateEstimatedWaitTime(activeQueue, positionInQueue);
+            const estimatedWaitTime = await calculateEstimatedWaitTime(activeQueue, positionInQueue);
 
             res.json({
                 positionInQueue: positionInQueue,
-                currentlyServing: nuevoAttentionNumber,
+                currentlyServing: newAttentionNumber,
                 estimatedWaitTime: estimatedWaitTime,
             });
         } catch (error) {
@@ -175,7 +175,6 @@ const patientController = {
 
     getIn: async (req, res) => {
         try {
-
             const queueId = req.params.queueId;
             const queue = await QueueModel.findByPk(queueId);
 
@@ -192,7 +191,6 @@ const patientController = {
                 },
                 order: [['createdAt', 'ASC']],
             });
-
 
             const nextPatient = await PatientModel.findOne({
                 where: {

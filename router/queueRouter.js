@@ -6,7 +6,7 @@ router.post('/createQueue', queueController.createQueue);
 router.get('/getQueueDetails/:queueId', queueController.getQueueDetails);
 router.put('/editQueue', queueController.editQueueTime);
 router.put('/closeQueue/:queueId', queueController.closeQueue);
-router.put('/removePatient/:patientId/:queueId', queueController.removePatient);
+router.put('/removePatient', queueController.removePatient);
 router.get('/queueStatus', queueController.updateQueueStatus);
 
 module.exports = router;

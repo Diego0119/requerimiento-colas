@@ -34,6 +34,8 @@ const queueController = {
                 limit: 1,
             });
 
+            const time = await QueueModel.findByPk(req.params.queueId);
+
             const quotas = await QueueModel.findOne({
                 where: { id: req.params.queueId },
                 attributes: ['quotas']
@@ -50,7 +52,8 @@ const queueController = {
             let remainingAttentionTime = null;
             if (patientsInQueue.length > 0) {
                 const currentPatient = patientsInQueue[0];
-                const endTime = currentPatient.endTime;
+                const endTime = time.endTime;
+                const startTime = time.startTime;
                 const now = new Date();
 
                 const remainingTimeInMinutes = Math.ceil((endTime - now) / (1000 * 60));
@@ -133,7 +136,6 @@ const queueController = {
             return res.status(500).json({ success: false, message: 'Error al editar el tiempo de atención' });
         }
     },
-
 
     closeQueue: async (req, res) => {
         try {
