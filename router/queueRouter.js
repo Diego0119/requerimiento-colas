@@ -4,8 +4,9 @@ const queueController = require('../controller/queueController');
 
 router.post('/createQueue', queueController.createQueue);
 router.get('/getQueueDetails/:queueId', queueController.getQueueDetails);
-router.put('/editQueue/:queueId', queueController.editQueue);
+router.put('/editQueue', queueController.editQueueTime);
 router.put('/closeQueue/:queueId', queueController.closeQueue);
-router.put('/removePatient/:patientId', queueController.removePatient);
+router.put('/removePatient/:patientId/:queueId', queueController.removePatient);
+router.get('/queueStatus', queueController.updateQueueStatus);
 
 module.exports = router;

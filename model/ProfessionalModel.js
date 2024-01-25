@@ -12,6 +12,16 @@ const Professional = sequelize.define('professional', {
         type: DataTypes.STRING,
         allowNull: false,
     },
+    createdAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+    },
+    updatedAt: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+    },
 });
 
 Professional.sync();

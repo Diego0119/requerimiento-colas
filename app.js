@@ -10,10 +10,6 @@ app.use(bodyParser.json());
 app.use('/queue', queueRouter);
 app.use('/patient', patientRouter);
 
-router.get('/', (req, res) => {
-    res.send('Colas!!');
-});
-
 const PORT = 3000;
 
 app.listen(PORT, () => {

@@ -9,7 +9,7 @@ const queueController = {
             const createdQueue = await QueueModel.createQueue(profesional_id, startTime, endTime);
 
             res.json({
-                id: createdQueue.id,
+                queue_id: createdQueue.id,
                 quotas: createdQueue.quotas,
                 status: createdQueue.status,
             });
@@ -24,39 +24,46 @@ const queueController = {
                 where: { id: req.params.queueId },
                 attributes: ['status', 'quotas']
             });
-            const patients = await PatientModel.findAll({});
 
-            const quotas = QueueModel.findOne({
+            const patientsInQueue = await PatientModel.findAll({
+                where: {
+                    queue_id: req.params.queueId,
+                    in_attention: true,
+                },
+                order: [['attention_number', 'DESC']],
+                limit: 1,
+            });
+
+            const quotas = await QueueModel.findOne({
                 where: { id: req.params.queueId },
                 attributes: ['quotas']
-            })
-            latestQuotas = false;
+            });
+
+            let latestQuotas = false;
             if (quotas <= 2) {
                 latestQuotas = true;
             }
 
-            const estimatedWaitingTime = 30 * 2;
-            const currentPatient = await PatientModel.findOne({
-                where: {
-                    in_attention: true,
-                },
+            const averageAppointmentDuration = 30;
+            const estimatedWaitingTime = patientsInQueue.length * averageAppointmentDuration;
 
-            });
-            const currentServiceNumber = currentPatient.id;
+            let remainingAttentionTime = null;
+            if (patientsInQueue.length > 0) {
+                const currentPatient = patientsInQueue[0];
+                const endTime = currentPatient.endTime;
+                const now = new Date();
 
+                const remainingTimeInMinutes = Math.ceil((endTime - now) / (1000 * 60));
 
-            if (currentPatient) {
-                const currentServiceNumber = currentPatient.id;
-                console.log(`Número de servicio actual en atención: ${currentServiceNumber}`);
-            } else {
-                console.log('No hay pacientes actualmente en atención.');
+                remainingAttentionTime = Math.max(0, remainingTimeInMinutes);
             }
 
             res.json({
                 ...queue.toJSON(),
-                estimated_time: estimatedWaitingTime,
+                estimated_waiting_time: estimatedWaitingTime,
                 latest_quotas: latestQuotas,
-                current_number: currentServiceNumber,
+                current_number: patientsInQueue.length > 0 ? patientsInQueue[0].attention_number : null,
+                remaining_attention_time: remainingAttentionTime,
             });
 
         } catch (error) {
@@ -64,41 +71,69 @@ const queueController = {
             res.status(500).send('Error al obtener detalles de la cola');
         }
     },
-    editQueue: async function editarTiempoDeCola(idCola, tiempo) {
+
+    editQueueTime: async (req, res) => {
         try {
+            const { queueId, newTotalTime, operation } = req.body;
 
-            const cola = await QueueModel.findByPk(idCola);
-
-            if (!cola) {
-                console.log('No se encontró la cola con el ID proporcionado.');
-                return { success: false, message: 'Cola no encontrada' };
+            if (!Number.isInteger(newTotalTime) || newTotalTime <= 0) {
+                return res.status(400).json({ success: false, message: 'El nuevo tiempo de atención debe ser un número positivo' });
             }
 
-            const nuevaDuracion = cola.quotas - tiempoReduccion;
-
-            if (nuevaDuracion < 0) {
-                console.log('La reducción de tiempo excede la duración actual de la cola.');
-                return { success: false, message: 'La reducción de tiempo excede la duración actual de la cola.' };
+            if (operation !== 'sumar' && operation !== 'restar') {
+                return res.status(400).json({ success: false, message: 'La operación debe ser "sumar" o "restar"' });
             }
 
-            const pacientesEnCola = await Patient.findAll({
-                where: { queue_id: idCola, in_queue: true },
+            const queue = await QueueModel.findByPk(queueId);
+
+            if (!queue) {
+                return res.status(404).json({ success: false, message: 'Cola no encontrada' });
+            }
+
+            const patientsInQueue = await PatientModel.findAll({
+                where: {
+                    queue_id: queueId,
+                    in_queue: true,
+                },
             });
 
-            if (pacientesEnCola.length > 0 && nuevaDuracion < pacientesEnCola.length * tiempoQuota) {
-                console.log('La reducción de tiempo dejaría a algunos pacientes sin ser atendidos.');
-                return { success: false, message: 'La reducción de tiempo dejaría a algunos pacientes sin ser atendidos.' };
+            const averageAppointmentDuration = 30;
+
+            const currentTotalTime = patientsInQueue.length * averageAppointmentDuration;
+
+            const startTime = queue.startTime;
+            const endTime = queue.endTime;
+            const totalMilliseconds = (new Date(endTime) - new Date(startTime));
+            const totalMinutes = totalMilliseconds / 60000;
+
+            if (operation === 'restar' && totalMinutes < newTotalTime) {
+                return res.status(400).json({ success: false, message: 'La reducción excede el tiempo total actual de atención a los pacientes' });
             }
 
-            await cola.update({ quotas: nuevaDuracion });
+            const newEndTime = new Date(queue.endTime);
 
-            console.log('Cola actualizada con éxito.');
-            return { success: true, message: 'Cola actualizada con éxito.', updatedQueue: cola };
+
+            if (operation === 'sumar') {
+                newEndTime.setMinutes(newEndTime.getMinutes() + newTotalTime);
+            } else if (operation === 'restar') {
+                newEndTime.setMinutes(newEndTime.getMinutes() - newTotalTime);
+            }
+
+            if (totalMinutes < newTotalTime) {
+                return res.status(400).json({ success: false, message: 'La reducción excede el tiempo total actual de atención a los pacientes' });
+            }
+
+            await queue.update({
+                endTime: newEndTime,
+            });
+
+            return res.json({ success: true, message: 'Tiempo de atención actualizado con éxito', queue });
         } catch (error) {
-            console.error('Error al editar la cola:', error);
-            return { success: false, message: 'Error al editar la cola.', error };
+            console.error(error);
+            return res.status(500).json({ success: false, message: 'Error al editar el tiempo de atención' });
         }
     },
+
 
     closeQueue: async (req, res) => {
         try {
@@ -123,7 +158,8 @@ const queueController = {
 
     removePatient: async (req, res) => {
         try {
-            const patientId = req.params.patientId;
+
+            const { patientId, queueId } = req.body;
 
             const patient = await PatientModel.findByPk(patientId);
 
@@ -140,10 +176,49 @@ const queueController = {
                 in_queue: false,
             })
 
-            return res.json({ success: true, message: 'Paciente sacado de la cola', updatedQueue: cola });
+            const updatedQueueDetails = await QueueModel.findByPk(queueId)
+
+            return res.json({
+                success: true,
+                message: 'Paciente sacado de la cola',
+                updatedQueueDetails: updatedQueueDetails,
+            });
 
         } catch (err) {
             console.log(err);
+        }
+    },
+
+    updateQueueStatus: async (req, res) => {
+        try {
+            const { queueId } = req.body;
+            const patientsInQueue = await PatientModel.findAll({
+                where: {
+                    queue_id: queueId,
+                    in_queue: true,
+                },
+            });
+
+            let queueStatus;
+
+            if (patientsInQueue.length === 0) {
+                queueStatus = 'Green';
+            } else if (patientsInQueue.length === 1) {
+                queueStatus = 'Yellow';
+            } else if (patientsInQueue.length <= 3) {
+                queueStatus = 'Red';
+            } else {
+                queueStatus = 'Full';
+            }
+
+            await QueueModel.update({ status: queueStatus }, { where: { id: queueId } });
+
+            const updatedQueue = await QueueModel.findByPk(queueId);
+
+            res.json({ success: true, message: 'Estado de la cola actualizado con éxito', queue: updatedQueue });
+        } catch (error) {
+            console.error(error);
+            res.status(500).json({ success: false, message: 'Error al actualizar el estado de la cola' });
         }
     }
 

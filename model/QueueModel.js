@@ -22,35 +22,33 @@ const Queue = sequelize.define('queue', {
         allowNull: false,
     },
     status: {
-        type: DataTypes.STRING, // O el tipo de dato adecuado para el estado
+        type: DataTypes.STRING,
         allowNull: false,
     },
     profesional_id: {
         type: DataTypes.INTEGER,
         references: {
-            model: Professional, // Usa el modelo importado
+            model: Professional,
             key: 'id',
         },
         allowNull: false,
     },
 });
 
-Queue.belongsTo(Professional, { foreignKey: 'profesional_id' }); // Ajusta esto según la estructura real de tu modelo Profesional
+Queue.belongsTo(Professional, { foreignKey: 'profesional_id' });
 
 Queue.createQueue = async (profesional_id, startTime, endTime) => {
     try {
-        // Calcular la duración total de la atención en minutos
-        const totalMinutes = (new Date(endTime) - new Date(startTime)) / (1000 * 60);
 
-        // Verificar si la duración cumple con el tiempo mínimo de atención
+        const totalMilliseconds = (new Date(endTime) - new Date(startTime));
+        const totalMinutes = totalMilliseconds / 60000;
+
         if (totalMinutes < 60) {
             throw new Error('El tiempo de atención debe ser de al menos una hora.');
         }
 
-        // Calcular la cantidad de cupos (cada 30 minutos)
         const quotas = Math.ceil(totalMinutes / 30);
 
-        // Determinar el estado de la cola
         let status;
         if (quotas) {
             status = 'Green';
@@ -58,11 +56,10 @@ Queue.createQueue = async (profesional_id, startTime, endTime) => {
             status = 'Yellow';
         } else if (quotas >= 2 && quotas <= 3) {
             status = 'Red';
-        } else if (cup) {
+        } else if (quotas) {
             status = 'Full';
         }
 
-        // Crear la cola en la base de datos
         const createdQueue = await Queue.create({
             profesional_id,
             startTime,

@@ -21,6 +21,10 @@ const Patient = sequelize.define('patients', {
         type: DataTypes.INTEGER,
         allowNull: false,
     },
+    attention_number: {
+        type: DataTypes.STRING,
+        allowNull: false,
+    },
     createdAt: {
         type: DataTypes.DATE,
         allowNull: false,
